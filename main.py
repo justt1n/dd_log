@@ -1,0 +1,125 @@
+import codecs
+import json
+import os
+from datetime import datetime
+
+from dotenv import load_dotenv
+from gspread.utils import a1_to_rowcol
+
+import constants
+from app.process import get_row_run_index
+from decorator.retry import retry
+from decorator.time_execution import time_execution
+from model.payload import Row
+from utils.dd_utils import get_dd_min_price
+from utils.exceptions import PACrawlerError
+from utils.ggsheet import GSheet, Sheet
+from utils.logger import setup_logging
+
+### SETUP ###
+load_dotenv("settings.env")
+
+setup_logging()
+gs = GSheet()
+
+
+### FUNCTIONS ###
+
+
+@time_execution
+@retry(5, delay=15, exception=PACrawlerError)
+def process(
+        gsheet: GSheet,
+):
+    print("process")
+    try:
+        sheet = Sheet.from_sheet_id(
+            gsheet=gsheet,
+            sheet_id=os.getenv("SPREADSHEET_ID"),  # type: ignore
+        )
+    except Exception as e:
+        print(f"Error getting sheet: {e}")
+        return
+    try:
+        worksheet = sheet.open_worksheet(os.getenv("SHEET_NAME"))  # type: ignore
+    except Exception as e:
+        print(f"Error getting worksheet: {e}")
+        return
+    row_indexes = get_row_run_index(worksheet=worksheet)
+
+    for index in row_indexes:
+        status = "NOT FOUND"
+        print(f"Row: {index}")
+        try:
+            row = Row.from_row_index(worksheet, index)
+        except Exception as e:
+            print(f"Error getting row: {e}")
+            _current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            write_to_log_cell(worksheet, index, "Error: " + _current_time, log_type="time")
+            continue
+        if not isinstance(row, Row):
+            continue
+        try:
+            min_price = get_dd_min_price(row.dd)
+            if min_price is None:
+                print("No item info")
+                continue
+            status = "FOUND"
+        except Exception as e:
+            print(f"Error calculating price change: {e}")
+            continue
+        write_to_log_cell(worksheet, index, status, log_type="status")
+        write_to_log_cell(worksheet, index, min_price[0], log_type="price")
+        write_to_log_cell(worksheet, index, min_price[1], log_type="title")
+        _current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        write_to_log_cell(worksheet, index, _current_time, log_type="time")
+        print("Next row...")
+
+
+
+def write_to_log_cell(
+        worksheet,
+        row_index,
+        log_str,
+        log_type="log"
+):
+    try:
+        r, c = None, None
+        if log_type == "status":
+            r, c = a1_to_rowcol(f"E{row_index}")
+        if log_type == "time":
+            r, c = a1_to_rowcol(f"F{row_index}")
+        if log_type == "price":
+            r, c = a1_to_rowcol(f"I{row_index}")
+        if log_type == "title":
+            r, c = a1_to_rowcol(f"J{row_index}")
+        worksheet.update_cell(r, c, log_str)
+    except Exception as e:
+        print(f"Error writing to log cell: {e}")
+
+
+### MAIN ###
+
+if __name__ == "__main__":
+    print("Starting...")
+    gsheet = GSheet(constants.KEY_PATH)
+    while True:
+        try:
+            process(gsheet)
+            try:
+                _time_sleep = float(os.getenv("TIME_SLEEP"))
+            except Exception:
+                _time_sleep = 0
+            print(f"Sleeping for {_time_sleep} seconds")
+            # test_browser = SeleniumUtil(mode=1)
+            # login(test_browser, False)
+        except Exception as e:
+            _str_error = f"Error: {e}"
+            sheet = Sheet.from_sheet_id(
+                gsheet=gsheet,
+                sheet_id=os.getenv("SPREADSHEET_ID"),  # type: ignore
+            )
+            worksheet = sheet.open_worksheet(os.getenv("SHEET_NAME"))  # type: ignore
+            _current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            write_to_log_cell(worksheet, 2, f"Error on: {_current_time}" + _str_error, log_type="error")
+        print("Done")
