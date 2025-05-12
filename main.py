@@ -2,8 +2,11 @@ import codecs
 import json
 import os
 from datetime import datetime
+import time
 
+import gspread
 from dotenv import load_dotenv
+from gspread.exceptions import APIError
 from gspread.utils import a1_to_rowcol
 
 import constants
@@ -42,6 +45,10 @@ def process(
         return
     try:
         worksheet = sheet.open_worksheet(os.getenv("SHEET_NAME"))  # type: ignore
+    except APIError as e:
+        print("Quota exceeded, sleeping for 60 seconds")
+        time.sleep(60)
+        return
     except Exception as e:
         print(f"Error getting worksheet: {e}")
         return
@@ -111,8 +118,7 @@ if __name__ == "__main__":
             except Exception:
                 _time_sleep = 0
             print(f"Sleeping for {_time_sleep} seconds")
-            # test_browser = SeleniumUtil(mode=1)
-            # login(test_browser, False)
+            time.sleep(_time_sleep)
         except Exception as e:
             _str_error = f"Error: {e}"
             sheet = Sheet.from_sheet_id(
@@ -122,4 +128,5 @@ if __name__ == "__main__":
             worksheet = sheet.open_worksheet(os.getenv("SHEET_NAME"))  # type: ignore
             _current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             write_to_log_cell(worksheet, 2, f"Error on: {_current_time}" + _str_error, log_type="error")
+            time.sleep(60)  # Wait for 60 seconds before retrying
         print("Done")
