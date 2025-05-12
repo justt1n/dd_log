@@ -72,6 +72,13 @@ def process(
                 print("No item info")
                 continue
             status = "FOUND"
+            try:
+                _row_time_sleep = float(os.getenv("ROW_TIME_SLEEP"))
+                print(f"Sleeping for {_row_time_sleep} seconds")
+                time.sleep(_row_time_sleep)
+            except Exception as e:
+                print("No row time sleep")
+
         except Exception as e:
             print(f"Error calculating price change: {e}")
             continue
