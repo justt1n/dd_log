@@ -162,7 +162,14 @@ def _filter_valid_offer_item(listOffers: List[DD373Product], filterParams: Filte
     offers_copy = copy.deepcopy(listOffers)
 
     # Sort by exchange_rate_2
-    sorted_offers = sorted(offers_copy, key=lambda x: float(x.exchange_rate_2.split('=')[1].replace('元', '').strip()))
+    # sorted_offers = sorted(offers_copy, key=lambda x: float(x.exchange_rate_2.split('=')[1].replace('元', '').strip()))
+
+    sorted_offers = sorted(
+        offers_copy,
+        key=lambda x: float(x.exchange_rate_2.split('=')[1].replace('元', '').strip())
+        if '=' in x.exchange_rate_2 and len(x.exchange_rate_2.split('=')) > 1
+        else float('inf')
+    )
 
     # apply filter
     valid_offers = []

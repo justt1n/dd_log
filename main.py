@@ -70,21 +70,24 @@ def process(
             min_price = get_dd_min_price(row.dd)
             if min_price is None:
                 print("No item info")
-                continue
-            status = "FOUND"
+            else:
+                print(f"Min price: {min_price[0]}")
+                print(f"Title: {min_price[1]}")
+                status = "FOUND"
+                write_to_log_cell(worksheet, index, min_price[0], log_type="price")
+                write_to_log_cell(worksheet, index, min_price[1], log_type="title")
             try:
                 _row_time_sleep = float(os.getenv("ROW_TIME_SLEEP"))
                 print(f"Sleeping for {_row_time_sleep} seconds")
                 time.sleep(_row_time_sleep)
             except Exception as e:
-                print("No row time sleep")
+                print("No row time sleep, sleeping for 3 seconds by default")
+                time.sleep(3)
 
         except Exception as e:
             print(f"Error calculating price change: {e}")
             continue
         write_to_log_cell(worksheet, index, status, log_type="status")
-        write_to_log_cell(worksheet, index, min_price[0], log_type="price")
-        write_to_log_cell(worksheet, index, min_price[1], log_type="title")
         _current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         write_to_log_cell(worksheet, index, _current_time, log_type="time")
         print("Next row...")
@@ -128,12 +131,6 @@ if __name__ == "__main__":
             time.sleep(_time_sleep)
         except Exception as e:
             _str_error = f"Error: {e}"
-            sheet = Sheet.from_sheet_id(
-                gsheet=gsheet,
-                sheet_id=os.getenv("SPREADSHEET_ID"),  # type: ignore
-            )
-            worksheet = sheet.open_worksheet(os.getenv("SHEET_NAME"))  # type: ignore
-            _current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            write_to_log_cell(worksheet, 2, f"Error on: {_current_time}" + _str_error, log_type="error")
+            print(_str_error)
             time.sleep(60)  # Wait for 60 seconds before retrying
         print("Done")
