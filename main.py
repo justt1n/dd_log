@@ -76,6 +76,7 @@ def process(
                 status = "FOUND"
                 write_to_log_cell(worksheet, index, min_price[0], log_type="price")
                 write_to_log_cell(worksheet, index, min_price[1], log_type="title")
+                write_to_log_cell(worksheet, index, min_price[2], log_type="stock")
             try:
                 _row_time_sleep = float(os.getenv("ROW_TIME_SLEEP"))
                 print(f"Sleeping for {_row_time_sleep} seconds")
@@ -110,6 +111,8 @@ def write_to_log_cell(
             r, c = a1_to_rowcol(f"I{row_index}")
         if log_type == "title":
             r, c = a1_to_rowcol(f"J{row_index}")
+        if log_type == "stock":
+            r, c = a1_to_rowcol(f"K{row_index}")
         worksheet.update_cell(r, c, log_str)
     except Exception as e:
         print(f"Error writing to log cell: {e}")

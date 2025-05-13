@@ -203,7 +203,8 @@ def get_dd_min_price(dd: DD) -> Optional[Tuple[float, str]]:
 
     min_price = min_price_object.price
     min_seller = min_price_object.title
-    dd_min_price = (min_price, min_seller)
+    stock = min_price_object.stock
+    dd_min_price = (min_price, min_seller, stock)
     return dd_min_price
 
 
