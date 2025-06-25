@@ -112,14 +112,16 @@ class DD373Product:
             product.purchase_url = href
 
         # get quantity form title '30000金=1800.00元'
-        if product.title:
+        # check if title contains [quantity]金=[price]元
+        if product.title and '=' in product.title:
             quantity_text = product.title.split('=')[0]
             try:
                 quantity = int(re.search(r'\d+', quantity_text).group())
                 product.stock = quantity*product.stock
             except (ValueError, TypeError):
                 quantity = 1
-                product.stock = 1
+        else:
+            quantity = 1
         product.price = product.price / quantity
         return product
 
