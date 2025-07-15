@@ -8,7 +8,17 @@ import gspread
 from dotenv import load_dotenv
 from gspread.exceptions import APIError
 from gspread.utils import a1_to_rowcol
-
+from selenium.webdriver.chrome.webdriver import WebDriver
+from selenium import webdriver
+from selenium.common import WebDriverException, TimeoutException
+from selenium.webdriver import Keys
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.webdriver import WebDriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.wait import WebDriverWait
+from webdriver_manager.chrome import ChromeDriverManager
 import constants
 from app.process import get_row_run_index
 from decorator.retry import retry
@@ -33,6 +43,7 @@ gs = GSheet()
 @retry(5, delay=15, exception=PACrawlerError)
 def process(
         gsheet: GSheet,
+        driver: WebDriver
 ):
     print("process")
     try:
@@ -67,7 +78,7 @@ def process(
         if not isinstance(row, Row):
             continue
         try:
-            min_price = get_dd_min_price(row.dd)
+            min_price = get_dd_min_price(row.dd, driver)
             if min_price is None:
                 print("No item info")
             else:
@@ -118,14 +129,30 @@ def write_to_log_cell(
         print(f"Error writing to log cell: {e}")
 
 
+def create_selenium_driver():
+    options = Options()
+    prefs = {"profile.default_content_setting_values.popups": 2}  # 2 = Block, 1 = Allow
+    options.add_experimental_option("prefs", prefs)
+    options.add_argument("--disable-notifications")  # Disables browser notification prompts
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])  # Hides "Chrome is being controlled" bar
+
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    print("Creating Selenium driver...")
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    print("Selenium driver created successfully.")
+    return driver
+
+
 ### MAIN ###
 
 if __name__ == "__main__":
     print("Starting...")
     gsheet = GSheet(constants.KEY_PATH)
+    sd = create_selenium_driver()
     while True:
         try:
-            process(gsheet)
+            process(gsheet, sd)
             try:
                 _time_sleep = float(os.getenv("TIME_SLEEP"))
             except Exception:
