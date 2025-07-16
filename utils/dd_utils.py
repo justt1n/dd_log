@@ -1,10 +1,14 @@
 import copy
 import re
+import time
 from dataclasses import dataclass, asdict
 
 import requests
 from bs4 import BeautifulSoup, Tag
 from typing import List, Dict, Any, Optional, Tuple
+
+from selenium.common import TimeoutException
+from selenium.webdriver.chrome.webdriver import WebDriver
 
 from model.sheet_model import DD
 
@@ -130,7 +134,7 @@ class DD373Product:
         return asdict(self)
 
 
-def get_dd373_listings(url: str) -> List[DD373Product]:
+def get_dd373_listings(url: str, driver: WebDriver) -> List[DD373Product]:
     """
     Scrapes product listings from DD373 website
 
@@ -139,18 +143,29 @@ def get_dd373_listings(url: str) -> List[DD373Product]:
 
     Returns:
         A list of DD373Product objects
+        :param driver:
     """
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
     }
 
-    # Extract domain for complete URLs
     domain = url.split('/s-')[0] if '/s-' in url else 'https://www.dd373.com'
+    driver.get(url)
+    page_source = driver.page_source
+    timeout = 15
+    start_time = time.time()
 
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
+    while True:
+        current_page_source = driver.page_source
+        if "acw_sc__v2" not in current_page_source:
+            page_source = current_page_source
+            break
 
-    soup = BeautifulSoup(response.text, 'html.parser')
+        if time.time() - start_time > timeout:
+            raise TimeoutException("Timeout when loading page source")
+        time.sleep(0.5)
+
+    soup = BeautifulSoup(page_source, 'html.parser')
 
     # Find all product listings
     goods_list_items = soup.select('div.goods-list-item')
@@ -182,7 +197,7 @@ def _filter_valid_offer_item(listOffers: List[DD373Product], filterParams: Filte
     return valid_offers
 
 
-def get_dd_min_price(dd: DD) -> Optional[Tuple[float, str]]:
+def get_dd_min_price(dd: DD, driver: WebDriver) -> Optional[Tuple[float, str]]:
     """
     Get the minimum price from the payload
 
@@ -196,7 +211,7 @@ def get_dd_min_price(dd: DD) -> Optional[Tuple[float, str]]:
     _filterParams.stock_min = dd.DD_STOCKMIN
     _filterParams.level_min = dd.DD_LEVELMIN
     list_offers = []
-    list_offers = get_dd373_listings(dd.DD_PRODUCT_LINK)
+    list_offers = get_dd373_listings(dd.DD_PRODUCT_LINK, driver)
     filter_list = _filter_valid_offer_item(list_offers, _filterParams)
 
     if not filter_list:
