@@ -1,24 +1,16 @@
-import codecs
-import json
 import os
-from datetime import datetime
 import time
+from datetime import datetime
 
-import gspread
 from dotenv import load_dotenv
 from gspread.exceptions import APIError
 from gspread.utils import a1_to_rowcol
-from selenium.webdriver.chrome.webdriver import WebDriver
 from selenium import webdriver
-from selenium.common import WebDriverException, TimeoutException
-from selenium.webdriver import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.webdriver import WebDriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.wait import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
+
 import constants
 from app.process import get_row_run_index
 from decorator.retry import retry
@@ -42,8 +34,8 @@ gs = GSheet()
 @time_execution
 @retry(5, delay=15, exception=PACrawlerError)
 def process(
-        gsheet: GSheet,
-        driver: WebDriver
+    gsheet: GSheet,
+    driver: WebDriver
 ):
     print("process")
     try:
@@ -105,12 +97,11 @@ def process(
         print("Next row...")
 
 
-
 def write_to_log_cell(
-        worksheet,
-        row_index,
-        log_str,
-        log_type="log"
+    worksheet,
+    row_index,
+    log_str,
+    log_type="log"
 ):
     try:
         r, c = None, None
@@ -135,12 +126,11 @@ def create_selenium_driver():
     options.add_experimental_option("prefs", prefs)
     options.add_argument("--disable-notifications")  # Disables browser notification prompts
     options.add_experimental_option("excludeSwitches", ["enable-automation"])  # Hides "Chrome is being controlled" bar
-
+    options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    print("Creating Selenium driver...")
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    print("Selenium driver created successfully.")
+    print("Driver created")
     return driver
 
 
