@@ -56,7 +56,10 @@ class DD373Product:
 
             # Product ID
             if '/detail-' in href:
-                product.product_id = href.split('/detail-')[1].split('.html')[0]
+                try:
+                    product.product_id = href.split('/detail-')[1].split('.html')[0]
+                except IndexError:
+                    pass
 
         # Server info
         server_info = item.select_one('.game-qufu-attr')
@@ -69,25 +72,38 @@ class DD373Product:
         if price_elem:
             price_text = price_elem.text.strip()
             try:
-                product.price = float(price_text.replace('￥', ''))
+                # Xử lý trường hợp có thể có ký tự lạ
+                product.price = float(re.sub(r'[^\d.]', '', price_text))
             except (ValueError, TypeError):
                 product.price = 0.0
 
-        # Stock
-        stock_elem = item.select_one('.kucun span')
+        # --- FIX STOCK (SỬA LỖI TỒN KHO) ---
+        # Tìm trong game-reputation nơi chứa số lượng đậm màu đỏ/cam
+        stock_elem = item.select_one('.game-reputation .colorff5.bold')
         if stock_elem:
             try:
                 product.stock = int(stock_elem.text.strip())
             except (ValueError, TypeError):
                 product.stock = 0
 
-        # Exchange rates
-        rates_div = item.select_one('.width233')
-        if rates_div:
-            rate_texts = [p.text.strip() for p in rates_div.select('p')]
-            if len(rate_texts) >= 2:
-                product.exchange_rate_1 = rate_texts[0]
-                product.exchange_rate_2 = rate_texts[1]
+        # Fallback: Nếu không tìm thấy ở reputation, thử tìm trong kucun (phòng trường hợp HTML đổi lại)
+        if product.stock == 0:
+            stock_elem_fallback = item.select_one('.kucun span')
+            if stock_elem_fallback:
+                try:
+                    product.stock = int(stock_elem_fallback.text.strip())
+                except (ValueError, TypeError):
+                    pass
+
+        # --- FIX EXCHANGE RATES (SỬA LỖI TỶ LỆ) ---
+        # Tìm div kucun chứa thẻ p (chứa tỷ lệ)
+        rates_divs = item.select('.kucun')
+        for div in rates_divs:
+            ps = div.select('p')
+            if len(ps) >= 2:
+                product.exchange_rate_1 = ps[0].text.strip()
+                product.exchange_rate_2 = ps[1].text.strip()
+                break  # Đã tìm thấy
 
         # Credit rating based on icon type and count
         reputation = item.select_one('.game-reputation')
@@ -96,15 +112,11 @@ class DD373Product:
             diamonds = len(reputation.select('i.icon-bluediamond'))
             crowns = len(reputation.select('i.icon-crown'))
 
-            # Calculate actual level based on icon type and count
             if hearts > 0:
-                # Levels 1-5: represented by 1-5 hearts
                 product.credit_rating = hearts
             elif diamonds > 0:
-                # Levels 6-10: represented by 1-5 diamonds
                 product.credit_rating = 5 + diamonds
             elif crowns > 0:
-                # Levels 11-15: represented by 1-5 crowns
                 product.credit_rating = 10 + crowns
 
         # Purchase URL
@@ -115,18 +127,26 @@ class DD373Product:
                 href = f"https:{href}"
             product.purchase_url = href
 
-        # get quantity form title '30000金=1800.00元'
-        # check if title contains [quantity]金=[price]元
+        # Quantity calculation logic (Logic tính toán số lượng thực tế)
+        # Ví dụ: Title là "1000 Divine = 95 tệ", Stock hiển thị là 6 (tức là 6 gói 1000)
+        # Tổng stock thực = 6 * 1000 = 6000
+        quantity = 1
         if product.title and '=' in product.title:
             quantity_text = product.title.split('=')[0]
             try:
-                quantity = int(re.search(r'\d+', quantity_text).group())
-                product.stock = quantity*product.stock
+                # Tìm số đầu tiên trong chuỗi trước dấu =
+                match = re.search(r'\d+', quantity_text)
+                if match:
+                    quantity = int(match.group())
+                    # Cập nhật stock nhân với số lượng gói
+                    product.stock = quantity * product.stock
             except (ValueError, TypeError):
                 quantity = 1
-        else:
-            quantity = 1
-        product.price = product.price / quantity
+
+        # Giá đơn vị (Unit price)
+        if quantity > 0:
+            product.price = product.price / quantity
+
         return product
 
     def to_dict(self) -> Dict[str, Any]:
