@@ -2,11 +2,9 @@ import copy
 import re
 import time
 from dataclasses import dataclass, asdict
-
-import requests
-from bs4 import BeautifulSoup, Tag
 from typing import List, Dict, Any, Optional, Tuple
 
+from bs4 import BeautifulSoup, Tag
 from selenium.common import TimeoutException
 from selenium.webdriver.chrome.webdriver import WebDriver
 
@@ -42,10 +40,9 @@ class DD373Product:
 
     @classmethod
     def from_html_element(cls, item: Tag, domain: str = "https://www.dd373.com") -> "DD373Product":
-        """Create a DD373Product instance from a BeautifulSoup Tag element"""
         product = cls()
 
-        # Title and URL
+        # 1. Title and URL
         title_elem = item.select_one('.goods-list-title')
         if title_elem:
             product.title = title_elem.text.strip()
@@ -54,58 +51,68 @@ class DD373Product:
                 href = f"{domain}{href}"
             product.url = href
 
-            # Product ID
             if '/detail-' in href:
                 try:
                     product.product_id = href.split('/detail-')[1].split('.html')[0]
                 except IndexError:
                     pass
 
-        # Server info
+        # 2. Server info
         server_info = item.select_one('.game-qufu-attr')
         if server_info:
             servers = [a.text.strip() for a in server_info.select('a')]
             product.server_info = '/'.join(servers) if servers else ''
 
-        # Price
-        price_elem = item.select_one('.goods-price span')
+        # 3. Price (Lấy tất cả số trong thẻ giá)
+        price_elem = item.select_one('.goods-price')
         if price_elem:
-            price_text = price_elem.text.strip()
+            # Chỉ lấy số và dấu chấm (ví dụ: ￥103.10 -> 103.10)
             try:
-                # Xử lý trường hợp có thể có ký tự lạ
-                product.price = float(re.sub(r'[^\d.]', '', price_text))
+                product.price = float(re.sub(r'[^\d.]', '', price_elem.text))
             except (ValueError, TypeError):
                 product.price = 0.0
 
-        # --- FIX STOCK (SỬA LỖI TỒN KHO) ---
-        # Tìm trong game-reputation nơi chứa số lượng đậm màu đỏ/cam
-        stock_elem = item.select_one('.game-reputation .colorff5.bold')
-        if stock_elem:
-            try:
-                product.stock = int(stock_elem.text.strip())
-            except (ValueError, TypeError):
-                product.stock = 0
+        # 4. STOCK (TỒN KHO) - CẢI TIẾN QUAN TRỌNG
+        # Thay vì tìm class .colorff5, ta tìm text "库存" hoặc "Stock" trong vùng chứa thông tin
+        # Cách này an toàn hơn nhiều.
+        reputation_div = item.select_one('.game-reputation')
+        if reputation_div:
+            # Regex tìm chuỗi kiểu: "库存： 7" hoặc "库存:7"
+            # \s* chấp nhận mọi khoảng trắng
+            stock_match = re.search(r'库存\s*[：:]\s*(\d+)', reputation_div.text)
+            if stock_match:
+                product.stock = int(stock_match.group(1))
+            else:
+                # Fallback: Thử tìm thẻ đậm (bold) nếu regex thất bại
+                bold_span = reputation_div.select_one('.bold')
+                if bold_span and bold_span.text.strip().isdigit():
+                    product.stock = int(bold_span.text.strip())
 
-        # Fallback: Nếu không tìm thấy ở reputation, thử tìm trong kucun (phòng trường hợp HTML đổi lại)
+        # Fallback cũ: Nếu vẫn chưa tìm ra stock, thử tìm trong .kucun (phòng khi web rollback)
         if product.stock == 0:
-            stock_elem_fallback = item.select_one('.kucun span')
-            if stock_elem_fallback:
-                try:
-                    product.stock = int(stock_elem_fallback.text.strip())
-                except (ValueError, TypeError):
-                    pass
+            stock_elem_old = item.select_one('.kucun span')
+            if stock_elem_old and stock_elem_old.text.strip().isdigit():
+                product.stock = int(stock_elem_old.text.strip())
 
-        # --- FIX EXCHANGE RATES (SỬA LỖI TỶ LỆ) ---
-        # Tìm div kucun chứa thẻ p (chứa tỷ lệ)
-        rates_divs = item.select('.kucun')
-        for div in rates_divs:
-            ps = div.select('p')
+        # 5. Exchange rates (Tỷ lệ)
+        # Tìm trong .kucun, bất kể cấu trúc div lồng nhau thế nào
+        kucun_div = item.select_one('.kucun')
+        if kucun_div:
+            # Lấy tất cả thẻ p, vì text tỷ lệ luôn nằm trong p
+            ps = kucun_div.select('p')
             if len(ps) >= 2:
                 product.exchange_rate_1 = ps[0].text.strip()
                 product.exchange_rate_2 = ps[1].text.strip()
-                break  # Đã tìm thấy
+            # Fallback cho giao diện cũ (.width233)
+            elif not ps:
+                old_rate_div = item.select_one('.width233')
+                if old_rate_div:
+                    ps_old = old_rate_div.select('p')
+                    if len(ps_old) >= 2:
+                        product.exchange_rate_1 = ps_old[0].text.strip()
+                        product.exchange_rate_2 = ps_old[1].text.strip()
 
-        # Credit rating based on icon type and count
+        # 6. Credit rating
         reputation = item.select_one('.game-reputation')
         if reputation:
             hearts = len(reputation.select('i.icon-heart'))
@@ -119,7 +126,7 @@ class DD373Product:
             elif crowns > 0:
                 product.credit_rating = 10 + crowns
 
-        # Purchase URL
+        # 7. Purchase URL
         buy_btn = item.select_one('.shop-btn-group a.im-buy-btn')
         if buy_btn:
             href = buy_btn.get('href', '')
@@ -127,23 +134,23 @@ class DD373Product:
                 href = f"https:{href}"
             product.purchase_url = href
 
-        # Quantity calculation logic (Logic tính toán số lượng thực tế)
-        # Ví dụ: Title là "1000 Divine = 95 tệ", Stock hiển thị là 6 (tức là 6 gói 1000)
-        # Tổng stock thực = 6 * 1000 = 6000
+        # 8. Tính toán số lượng thực (Quantity & Unit Price)
+        # Logic: Title "1000 Divine = 100 tệ", Stock hiển thị 2 -> Tổng stock = 2000
         quantity = 1
         if product.title and '=' in product.title:
-            quantity_text = product.title.split('=')[0]
             try:
-                # Tìm số đầu tiên trong chuỗi trước dấu =
-                match = re.search(r'\d+', quantity_text)
+                # Lấy phần text trước dấu =, ví dụ "1000个神圣石"
+                quantity_part = product.title.split('=')[0]
+                # Tìm số đầu tiên trong chuỗi này
+                match = re.search(r'\d+', quantity_part)
                 if match:
                     quantity = int(match.group())
-                    # Cập nhật stock nhân với số lượng gói
+                    # Nhân stock hiển thị với số lượng gói
                     product.stock = quantity * product.stock
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, IndexError):
                 quantity = 1
 
-        # Giá đơn vị (Unit price)
+        # Tính giá đơn vị
         if quantity > 0:
             product.price = product.price / quantity
 
